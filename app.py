@@ -1,3 +1,4 @@
+import time
 import re
 import smtplib
 from email.message import EmailMessage
@@ -10,7 +11,8 @@ from google.genai import types
 from prompts import CHAT_SYSTEM_PROMPT, EXTRACTION_PROMPT, WELCOME_MESSAGE_TEMPLATE
 from splitter import Receipt, build_breakdown, money, parse_people, split_bill, to_cents
 
-MODEL_NAME = "gemini-3.8-flash"  # if you get "model not found", try "gemini-2.5-flash"
+MODEL_NAME = "gemini-3.5-flash"  # if you get "model not found", try "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-3.1-flash-lite"
 CURRENCIES = {"₹ INR": "₹", "$ USD": "$", "€ EUR": "€", "£ GBP": "£"}
 
 st.set_page_config(page_title="SplitSnap", page_icon="🧾")
@@ -43,25 +45,28 @@ def add_message(role, kind, content):
 def is_valid_email(address):
     return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", address) is not None
 
-
 def extract_receipt(photo_bytes, mime_type):
-    """Vision step: photo in -> structured Receipt out (or an error message)."""
-    try:
-        response = gemini_client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[
-                types.Part.from_bytes(data=photo_bytes, mime_type=mime_type),
-                EXTRACTION_PROMPT,
-            ],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=Receipt,
-                temperature=0,
-            ),
-        )
-        return Receipt.model_validate_json(response.text), None
-    except Exception as error:
-        return None, str(error)
+    """Vision step: photo in -> structured Receipt out (retries if Gemini is busy)."""
+    last_error = ""
+    for model in (MODEL_NAME, MODEL_NAME, FALLBACK_MODEL):
+        try:
+            response = gemini_client.models.generate_content(
+                model=model,
+                contents=[
+                    types.Part.from_bytes(data=photo_bytes, mime_type=mime_type),
+                    EXTRACTION_PROMPT,
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=Receipt,
+                    temperature=0,
+                ),
+            )
+            return Receipt.model_validate_json(response.text), None
+        except Exception as error:
+            last_error = str(error)
+            time.sleep(2)
+    return None, last_error
 
 
 def ask_gemini(text):
@@ -69,10 +74,14 @@ def ask_gemini(text):
     receipt_json = st.session_state.get("receipt_json")
     if receipt_json:
         text = f"Current receipt (JSON): {receipt_json}\n\nUser message: {text}"
-    try:
-        return st.session_state.chat.send_message(text).text or "Sorry, I got an empty reply."
-    except Exception as error:
-        return f"Sorry, something went wrong: {error}"
+    last_error = ""
+    for _ in range(3):
+        try:
+            return st.session_state.chat.send_message(text).text or "Sorry, I got an empty reply."
+        except Exception as error:
+            last_error = str(error)
+            time.sleep(2)
+    return f"Gemini is busy right now. Please try again in a minute. ({last_error})"
 
 
 def load_receipt(receipt):

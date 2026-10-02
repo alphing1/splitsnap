@@ -1,0 +1,4 @@
+streamlit>=1.43
+google-genai 
+pandas 
+pydantic 

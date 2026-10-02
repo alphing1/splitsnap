@@ -10,7 +10,7 @@ from google.genai import types
 from prompts import CHAT_SYSTEM_PROMPT, EXTRACTION_PROMPT, WELCOME_MESSAGE_TEMPLATE
 from splitter import Receipt, build_breakdown, money, parse_people, split_bill, to_cents
 
-MODEL_NAME = "gemini-2.5-flash"  # if you get "model not found", try "gemini-2.5-flash"
+MODEL_NAME = "gemini-3.8-flash"  # if you get "model not found", try "gemini-2.5-flash"
 CURRENCIES = {"₹ INR": "₹", "$ USD": "$", "€ EUR": "€", "£ GBP": "£"}
 
 st.set_page_config(page_title="SplitSnap", page_icon="🧾")
